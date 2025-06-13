@@ -1,0 +1,41 @@
+// --- File: middleware/authMiddleware.js ---
+// This middleware protects routes by verifying JWT
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js'; // Added .js extension
+import dotenv from 'dotenv';
+
+// Load environment variables (necessary here too if this file is imported directly)
+dotenv.config();
+
+const protect = async (req, res, next) => {
+  let token;
+
+  // Read token from cookies instead of Authorization header
+  token = req.cookies.accessToken;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Not authorized, no access token found in cookies.' });
+  }
+
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Attach user to the request object (without password or refresh token hash)
+    req.user = await User.findById(decoded.id).select('-password -refreshTokenHash');
+    
+    if (!req.user) {
+        // Token was valid but user no longer exists in DB
+        return res.status(401).json({ message: 'Not authorized, user not found.' });
+    }
+    next();
+  } catch (error) {
+    console.error('Access token verification failed:', error.message);
+    // Clear potentially expired/invalid access token cookie
+    res.clearCookie('accessToken');
+    // Do NOT clear refresh token here; auto-login will handle it.
+    res.status(401).json({ message: 'Not authorized, access token invalid or expired. Please use auto-login or re-authenticate.' });
+  }
+};
+
+export { protect }; // Exporting protect as a named export
