@@ -354,10 +354,6 @@ If you encounter any issues, open an issue on the GitHub repo or contact **Surya
 
 This project is licensed under the **ISC License**. See the [LICENSE](./LICENSE) file for more details.
 
-```
-Let me know if you also want a downloadable version of this file or a GitHub-compatible setup.
-```
-
 ## Acknowledgments
 
 This project utilizes the following open-source technologies to build the blog CRUD backend API:
