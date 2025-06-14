@@ -21,8 +21,100 @@ app.use(express.json());
 // Middleware to parse cookies
 app.use(cookieParser());
 
+// Catch-all for unknown routes (404 Not Found)
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found on this server.`
+  });
+});
+
+// Generic error handler (handles all unhandled errors)
+app.use((err, _req, res, _next) => {
+  console.error('❌ Server Error:', err.stack);
+
+  // Common known errors
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation Error',
+      errors: err.errors || err.message,
+    });
+  }
+
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized',
+      error: err.message,
+    });
+  }
+
+  if (err.name === 'ForbiddenError') {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'NotFoundError') {
+    return res.status(404).json({
+      success: false,
+      message: 'Not Found',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'MethodNotAllowedError') {
+    return res.status(405).json({
+      success: false,
+      message: 'Method Not Allowed',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'RequestTimeoutError') {
+    return res.status(408).json({
+      success: false,
+      message: 'Request Timeout',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'ServiceUnavailableError') {
+    return res.status(503).json({
+      success: false,
+      message: 'Service Unavailable',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'TooManyRequestsError') {
+    return res.status(429).json({
+      success: false,
+      message: 'Too Many Requests',
+      error: err.message
+    });
+  }
+
+  if (err.name === 'BadGatewayError') {
+    return res.status(502).json({
+      success: false,
+      message: 'Bad Gateway',
+      error: err.message
+    });
+  }
+
+  // Default 500 handler
+  res.status(err.statusCode || 500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+  });
+});
+
 // Basic home route
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send('User Auth API is running...');
 });
 

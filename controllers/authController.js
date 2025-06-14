@@ -3,6 +3,7 @@
 import { validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import RevokedToken from '../models/RevokedToken.js';
 import dotenv from 'dotenv';
 import crypto from 'crypto'; // For generating cryptographically secure random strings
 import bcrypt from 'bcryptjs'; // For hashing the refresh token
@@ -13,15 +14,15 @@ dotenv.config();
 // Define cookie options for HttpOnly, Secure, and SameSite
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production', // Only true in production over HTTPS
-  sameSite: 'Lax', // Protects against CSRF attacks. Can be 'Strict' for more security or 'None' with secure:true for cross-site
+  secure: true, // Only true in production over HTTPS
+  sameSite: 'None', // Protects against CSRF attacks. Can be 'Strict' for more security or 'None' with secure:true for cross-site
   maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days (for refresh token)
 };
 
 // Generate JWT token
 const generateAccessToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '1h', // Token expires in 1 hour
+    expiresIn: '10m', // Token expires in 10 minutes
   });
 };
 
@@ -67,7 +68,7 @@ const registerUser = async (req, res) => {
       const accessToken = generateAccessToken(user._id);
 
       // Set tokens in HTTP-only cookies
-      res.cookie('accessToken', accessToken, { ...cookieOptions, maxAge: 1 * 60 * 60 * 1000 }); // 1 hour for access token
+      res.cookie('accessToken', accessToken, { ...cookieOptions, maxAge: 10 * 60 * 1000 }); // 1 hour for access token
       res.cookie('refreshToken', refreshToken, cookieOptions); // 7 days for refresh token
 
       res.status(201).json({
@@ -122,7 +123,7 @@ const loginUser = async (req, res) => {
       const newAccessToken = generateAccessToken(user._id);
 
       // Set new tokens in HTTP-only cookies
-      res.cookie('accessToken', newAccessToken, { ...cookieOptions, maxAge: 1 * 60 * 60 * 1000 });
+      res.cookie('accessToken', newAccessToken, { ...cookieOptions, maxAge: 10 * 60 * 1000 });
       res.cookie('refreshToken', newRefreshToken, cookieOptions);
 
       res.json({
@@ -191,7 +192,7 @@ const autoLoginUser = async (req, res) => {
     await userFound.save();
 
     // Set new tokens in HTTP-only cookies
-    res.cookie('accessToken', newAccessToken, { ...cookieOptions, maxAge: 1 * 60 * 60 * 1000 });
+    res.cookie('accessToken', newAccessToken, { ...cookieOptions, maxAge: 10 * 60 * 1000 });
     res.cookie('refreshToken', newRefreshToken, cookieOptions);
 
     // Refresh token is valid, issue a new access token
@@ -210,40 +211,54 @@ const autoLoginUser = async (req, res) => {
   }
 };
 
-// @desc    Logout user (client-side token removal)
+// @desc    Logout user (client-side token removal and server-side refresh token/access token invalidation)
 // @route   POST /api/auth/logout
-// @access  Private (or Public, depending on how you handle it)
+// @access  Private
 const logoutUser = async (req, res) => {
-  // The 'protect' middleware ensures req.user is populated with the user's details
-  // from the access token. We use req.user.id to identify the user logging out.
+  const accessToken = req.cookies.accessToken; // Get the current access token from cookie
+
   if (!req.user || !req.user.id) {
     console.error('Logout: req.user or req.user.id is missing.');
     // Clear cookies even if user ID isn't directly available from token
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
-    return res.status(401).json({ message: 'Not authorized, user information missing for logout.' });
+    return res.status(401).json({ message: 'Not authorized or user information missing for logout. Cookies cleared.' });
   }
 
   console.log(`Attempting to logout user ID: ${req.user.id}`);
 
   try {
-    // Find the user and update their refreshTokenHash field to remove it
-    const result = await User.findByIdAndUpdate(
+    // 1. Invalidate refreshTokenHash in the database
+    const userUpdateResult = await User.findByIdAndUpdate(
       req.user.id,
-      { $unset: { refreshTokenHash: 1 } }, // Use $unset to remove the field
-      { new: true } // Return the updated document
+      { $unset: { refreshTokenHash: 1 } },
+      { new: true }
     );
 
-    // Clear tokens from HTTP-only cookies
+    // 2. Blacklist the current accessToken
+    if (accessToken) {
+      const decoded = jwt.decode(accessToken);
+      if (decoded && decoded.exp) {
+        const expiresAt = new Date(decoded.exp * 1000); // JWT exp is in seconds, convert to milliseconds
+        await RevokedToken.create({ token: accessToken, expiresAt });
+        console.log(`Access token blacklisted for user ID: ${req.user.id}`);
+      } else {
+        console.warn('Could not decode access token or extract expiry for blacklisting:', accessToken);
+      }
+    } else {
+      console.log('No access token found in cookies to blacklist.');
+    }
+
+    // 3. Clear tokens from HTTP-only cookies
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
 
-    if (result) {
-      console.log(`User ID: ${req.user.id} refresh token hash successfully invalidated.`);
-      res.json({ message: 'User logged out successfully and refresh token invalidated.' });
+    if (userUpdateResult) {
+      console.log(`User ID: ${req.user.id} refresh token hash successfully invalidated and cookies cleared.`);
+      res.json({ message: 'User logged out successfully and all tokens invalidated.' });
     } else {
-      console.log(`User ID: ${req.user.id} not found for logout (perhaps already logged out or invalid ID).`);
-      res.status(404).json({ message: 'User not found or refresh token already invalidated.' });
+      console.log(`User ID: ${req.user.id} not found for logout (perhaps already logged out or invalid ID). Cookies cleared.`);
+      res.status(404).json({ message: 'User not found or refresh token already invalidated. Cookies cleared.' });
     }
   } catch (error) {
     console.error(`Error during logout for user ID ${req.user.id}:`, error);

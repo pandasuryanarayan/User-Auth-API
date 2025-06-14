@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project provides a secure and robust user authentication API built with Node.js, Express, and MongoDB, leveraging JSON Web Tokens (JWT) for stateless authentication. It includes functionalities for user registration, login, and a protected route accessible only to authenticated users. Input validation is handled using `express-validator` to ensure data integrity and security.
+This project provides a secure and robust user authentication API built with Node.js, Express, and MongoDB, leveraging JSON Web Tokens (JWT) for stateless authentication. It includes functionalities for user registration, login, and a protected route accessible only to authenticated users. Input validation is handled using `express-validator` to ensure data integrity and security. Here token is revoked on logout or expiry of token and all protected routes are protected.
 
 ---
 
@@ -34,6 +34,7 @@ user-auth-api/
 │   └── authMiddleware.js   # JWT verification middleware
 ├── models/
 │   └── User.js             # Mongoose schema for User
+│   └── RevokedToken.js     # Mongoose schema for Revoked Token
 └── routes/
     └── authRoutes.js       # Routes for authentication
 ```
